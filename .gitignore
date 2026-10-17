@@ -1,0 +1,10 @@
+# Dokumen soal & catatan lokal (tidak ikut di-commit)
+SOAL.md
+
+# Rahasia
+.env
+
+# Dependensi & artefak
+node_modules/
+vendor/
+dist/
