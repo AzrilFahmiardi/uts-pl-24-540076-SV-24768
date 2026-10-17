@@ -1,0 +1,117 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main, dev, "feature/**"]
+  pull_request:
+    branches: [main, dev]
+
+jobs:
+  backend-test:
+    name: backend-test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.3"
+          extensions: pdo_sqlite, mbstring
+          coverage: none
+
+      - name: Cache Composer
+        uses: actions/cache@v4
+        with:
+          path: ~/.composer/cache
+          key: composer-${{ hashFiles('backend/composer.lock') }}
+
+      - run: composer install --no-interaction --prefer-dist --no-progress
+      - run: cp .env.example .env && php artisan key:generate
+      - name: Jalankan pengujian
+        run: php artisan test
+
+  frontend-build:
+    name: frontend-build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+      - run: npm run build
+        env:
+          VITE_API_URL: /api
+
+  deploy:
+    name: deploy
+    needs: [backend-test, frontend-build]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Nama owner huruf kecil (syarat ghcr.io)
+        run: echo "OWNER=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_ENV"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build dan push image backend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          push: true
+          tags: ghcr.io/${{ env.OWNER }}/uts-backend:${{ github.sha }}
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+
+      - name: Build dan push image frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          push: true
+          build-args: VITE_API_URL=/api
+          tags: ghcr.io/${{ env.OWNER }}/uts-frontend:${{ github.sha }}
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+
+      - name: Smoke test seluruh sistem dengan Docker Compose
+        env:
+          APP_KEY: ${{ secrets.APP_KEY }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+        run: |
+          ADMIN_PASSWORD=$(openssl rand -hex 12)
+          {
+            echo "APP_KEY=$APP_KEY"
+            echo "DB_DATABASE=inventaris_lab"
+            echo "DB_USERNAME=lab_user"
+            echo "DB_PASSWORD=$DB_PASSWORD"
+            echo "DB_ROOT_PASSWORD=$DB_PASSWORD"
+            echo "ADMIN_EMAIL=admin@example.com"
+            echo "ADMIN_PASSWORD=$ADMIN_PASSWORD"
+          } > .env
+          docker compose up -d --build --wait --wait-timeout 180
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://localhost:8080/api/login \
+            -H 'Accept: application/json' -H 'Content-Type: application/json' \
+            -d "{\"email\":\"admin@example.com\",\"password\":\"$ADMIN_PASSWORD\"}")
+          echo "Login lewat Nginx -> FrankenPHP -> MySQL: HTTP $code"
+          docker compose logs backend --tail 20
+          docker compose down -v
+          test "$code" = "200"
