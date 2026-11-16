@@ -23,3 +23,11 @@ Login awal memakai `ADMIN_EMAIL` dan `ADMIN_PASSWORD` dari `.env`.
 ```bash
 cd backend && php artisan test
 ```
+
+## Monitoring (Prometheus + Grafana)
+`docker compose up -d` juga menjalankan prometheus, grafana, cadvisor, dan node-exporter (versi image dikunci, data di volume `prometheus_data` dan `grafana_data`).
+- Prometheus: http://localhost:9090 (`/targets`, `/alerts`)
+- Grafana: http://localhost:3000, user `admin`, password dari `GRAFANA_ADMIN_PASSWORD` di `.env` (wajib diisi, jangan `admin`)
+- Dashboard "Inventaris Alat Lab - Kesehatan Aplikasi" otomatis dimuat dari `monitoring/grafana/dashboards/`
+- Aturan alarm: `monitoring/alerts.yml` (`BackendDown`, `for: 30s`)
+- Metrik permintaan HTTP berasal dari endpoint `/metrics` Caddy di container backend (hanya dari jaringan privat)
