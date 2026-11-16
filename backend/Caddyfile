@@ -2,6 +2,11 @@
 	auto_https off
 	admin off
 	frankenphp
+
+	# Hitung permintaan HTTP per server (caddy_http_requests_total, dst.)
+	servers {
+		metrics
+	}
 }
 
 :8000 {
@@ -13,5 +18,20 @@
 		format console
 	}
 
-	php_server
+	# Endpoint metrik untuk Prometheus; hanya dari jaringan privat/Docker
+	@metrics_ok {
+		path /metrics
+		remote_ip private_ranges
+	}
+	handle @metrics_ok {
+		metrics
+	}
+
+	handle /metrics {
+		respond "forbidden" 403
+	}
+
+	handle {
+		php_server
+	}
 }
