@@ -1,0 +1,12 @@
+groups:
+  - name: aplikasi-inventaris
+    rules:
+      - alert: BackendDown
+        expr: up{job="backend"} == 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Layanan backend Inventaris Alat Lab tidak merespons"
+          description: "Target {{ $labels.instance }} (job {{ $labels.job }}) tidak bisa di-scrape selama lebih dari 30 detik, artinya API tidak melayani permintaan."
+          first_action: "Jalankan `docker compose ps` lalu `docker compose logs --tail=50 backend` untuk melihat penyebabnya. Jika container berhenti, pulihkan dengan `docker compose up -d backend`."
